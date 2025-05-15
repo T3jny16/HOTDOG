@@ -1,0 +1,226 @@
+<!DOCTYPE html>
+<html lang="cs">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Hotdog Drop Game</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body, html { width: 100%; height: 100%; overflow: hidden; background: #fff; }
+    canvas { display: block; margin: 0 auto; background: #fff; }
+    #menu, #gameOver, #pauseMenu {
+      position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+      background: rgba(255,255,255,0.95);
+      display: flex; flex-direction: column; align-items: center; justify-content: center;
+      font-family: sans-serif;
+    }
+    button {
+      margin: 10px; padding: 15px 30px; font-size: 20px;
+      border: none; border-radius: 10px;
+      background: #ccc; cursor: pointer;
+    }
+    #claimMsg {
+      position: absolute; top: 70%; left: 50%; transform: translateX(-50%);
+      font-size: 20px; color: #c00;
+    }
+    #itemInfo {
+      position: absolute;
+      right: 10px;
+      top: 50px;
+      font-size: 16px;
+      background: rgba(255,255,255,0.9);
+      padding: 10px;
+      border-radius: 10px;
+      box-shadow: 0 0 5px #aaa;
+    }
+    #itemInfo h3 {
+      margin-bottom: 8px;
+    }
+  </style>
+</head>
+<body>
+  <div id="menu">
+    <h1>Hotdog Drop Game</h1>
+    <button onclick="startGame()">Start</button>
+    <button onclick="window.close()">Ukončit</button>
+  </div>
+
+  <div id="pauseMenu" style="display:none;">
+    <h2>Pauza</h2>
+    <button id="claimBtn" onclick="claimHotdog()">🌭 Vyzvedni si mě (100 coinů)</button>
+    <div id="claimMsg"></div>
+  </div>
+
+  <div id="gameOver" style="display:none;">
+    <h2>Prohrál jsi!</h2>
+    <p id="finalScore"></p>
+    <button onclick="goToMenu()">Zpět do menu</button>
+    <button onclick="window.close()">Ukončit</button>
+  </div>
+
+  <div id="itemInfo">
+    <h3>💰 Hodnoty předmětů:</h3>
+    <ul>
+      <li>🌭 Hotdog – 1 coin</li>
+      <li>🟥 Kečup – 2 coiny</li>
+      <li>🟨 Hořčice – 2 coiny</li>
+      <li>⭐ Stánek s Hotdogy – 5 coinů</li>
+    </ul>
+  </div>
+
+  <canvas id="gameCanvas" width="600" height="800"></canvas>
+
+  <script>
+    const canvas = document.getElementById('gameCanvas');
+    const ctx = canvas.getContext('2d');
+    let playerX = 250;
+    let playerY = canvas.height - 110; // posunutí košíku výš
+    let score = 0;
+    let lives = 3;
+    let speedMultiplier = 1;
+    let items = [];
+    let paused = false;
+    let gameRunning = false;
+    const images = {};
+    const keys = {};
+
+    const loadImages = async () => {
+      const paths = {
+        player: 'basket.png',
+        hotdog: 'hotdog.png',
+        ketchup: 'ketchup.png',
+        mustard: 'mustard.png',
+        special: 'special_hotdog.png',
+        coin: 'coin.png'
+      };
+      for (let key in paths) {
+        images[key] = new Image();
+        images[key].src = paths[key];
+        await new Promise(r => images[key].onload = r);
+      }
+    };
+
+    const randX = () => Math.random() * (canvas.width - 70);
+
+    const generateItems = () => {
+      const baseSpeed = 4 * speedMultiplier;
+      items = [
+        { type: 'hotdog', x: randX(), y: -50, speed: baseSpeed, value: 1 },
+        { type: 'ketchup', x: randX(), y: -200, speed: baseSpeed, value: 2 },
+        { type: 'mustard', x: randX(), y: -350, speed: baseSpeed, value: 2 }
+      ];
+      if (Math.random() < 0.4) {
+        items.push({ type: 'special', x: randX(), y: -500, speed: baseSpeed + 2, value: 5 });
+      }
+    };
+
+    const draw = () => {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      ctx.drawImage(images.player, playerX, playerY, 100, 100);
+      for (let item of items) {
+        ctx.drawImage(images[item.type], item.x, item.y, 60, 40);
+      }
+      ctx.drawImage(images.coin, 10, 10, 30, 30);
+      ctx.fillStyle = '#000';
+      ctx.font = '24px sans-serif';
+      ctx.fillText(score, 50, 35);
+      ctx.fillText(`Životy: ${lives}`, 250, 35);
+    };
+
+    const update = () => {
+      if (!gameRunning || paused) return;
+
+      const moveSpeed = 6 * speedMultiplier;
+      if (keys['ArrowLeft']) playerX -= moveSpeed;
+      if (keys['ArrowRight']) playerX += moveSpeed;
+      playerX = Math.max(0, Math.min(canvas.width - 100, playerX));
+
+      for (let item of items) {
+        item.y += item.speed;
+        if (item.y + 50 >= playerY && item.x > playerX && item.x < playerX + 100) {
+          score += item.value;
+          item.y = -50;
+          item.x = randX();
+        }
+        if (item.y > canvas.height) {
+          lives--;
+          item.y = -50;
+          item.x = randX();
+          if (lives <= 0) return gameOver();
+        }
+      }
+
+      if (score >= 100) {
+        gameRunning = false;
+        window.location.href = "hotdog.html";
+      }
+
+      const newMultiplier = 1 + Math.floor(score / 10) * 0.2;
+      if (newMultiplier !== speedMultiplier) {
+        speedMultiplier = newMultiplier;
+        generateItems();
+      }
+    };
+
+    const loop = () => {
+      update();
+      draw();
+      if (gameRunning) requestAnimationFrame(loop);
+    };
+
+    function startGame() {
+      score = 0;
+      lives = 3;
+      playerX = 250;
+      playerY = canvas.height - 110;
+      speedMultiplier = 1;
+      items = [];
+      gameRunning = true;
+      paused = false;
+      document.getElementById('menu').style.display = 'none';
+      document.getElementById('gameOver').style.display = 'none';
+      document.getElementById('pauseMenu').style.display = 'none';
+      generateItems();
+      loop();
+    }
+
+    function gameOver() {
+      gameRunning = false;
+      document.getElementById('finalScore').innerText = `Skóre: ${score}`;
+      document.getElementById('gameOver').style.display = 'flex';
+    }
+
+    function goToMenu() {
+  score = 0;
+  paused = false;
+  document.getElementById('pauseMenu').style.display = 'none';
+  document.getElementById('gameOver').style.display = 'none';
+  document.getElementById('menu').style.display = 'flex';
+}
+
+
+    function claimHotdog() {
+      const msg = document.getElementById('claimMsg');
+      if (score >= 100) {
+        msg.innerText = '🌭 Vyzvedni si u nás svůj hotdog!';
+        setTimeout(() => window.location.href = "hotdog.html", 1000);
+      } else {
+        msg.innerText = '❌ Nemáš dostatek coinů!';
+        setTimeout(() => msg.innerText = '', 2000);
+      }
+    }
+
+    window.addEventListener('keydown', e => {
+      if (e.code === 'Space') {
+        paused = !paused;
+        document.getElementById('pauseMenu').style.display = paused ? 'flex' : 'none';
+      }
+      keys[e.key] = true;
+    });
+
+    window.addEventListener('keyup', e => keys[e.key] = false);
+
+    loadImages();
+  </script>
+</body>
+</html>
